@@ -1,0 +1,114 @@
+name: Backend CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "starter/backend/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: cluster
+  ECR_REPOSITORY: backend
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: starter/backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - run: pip install pipenv
+      - run: pipenv install --dev
+      - run: pipenv run lint
+
+  test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: starter/backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - run: pip install pipenv
+      - run: pipenv install --dev
+      - run: pipenv run test
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: starter/backend
+          push: true
+          tags: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --name "$EKS_CLUSTER_NAME" \
+            --region "$AWS_REGION"
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/kustomize
+
+      - id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Update image
+        working-directory: starter/backend/k8s
+        run: |
+          kustomize edit set image \
+            backend=${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Deploy
+        working-directory: starter/backend/k8s
+        run: |
+          kustomize build | kubectl apply -f -
