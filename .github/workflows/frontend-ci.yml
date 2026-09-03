@@ -1,12 +1,12 @@
-name: Frontend CI
+name: Frontend Continuous Integration
 
 on:
-  workflow_dispatch:
   pull_request:
     branches:
       - main
     paths:
-      - 'frontend/**'
+      - "starter/frontend/**"
+  workflow_dispatch:
 
 jobs:
   lint:
@@ -17,19 +17,17 @@ jobs:
         working-directory: starter/frontend
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18.14'
+          node-version-file: starter/frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: starter/frontend/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
 
-      - name: Run lint
-        run: npm run lint
+      - run: npm run lint
 
   test:
     runs-on: ubuntu-latest
@@ -39,41 +37,53 @@ jobs:
         working-directory: starter/frontend
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18.14'
+          node-version-file: starter/frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: starter/frontend/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
 
-      - name: Run tests
-        run: CI=true npm test -- --watchAll=false
+      - run: CI=true npm test -- --watchAll=false
 
   build:
     runs-on: ubuntu-latest
-    needs:
-      - lint
-      - test
+    needs: [lint, test]
 
     defaults:
       run:
         working-directory: starter/frontend
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18.14'
+          node-version-file: starter/frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: starter/frontend/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Restore npm cache
+        uses: actions/cache@v4
+        with:
+          path: starter/frontend/node_modules
+          key: ${{ runner.os }}-frontend-${{ hashFiles('starter/frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-frontend-
 
-      - name: Build application
-        run: npm run build
+      - run: npm ci
+
+      - name: Run tests
+        run: CI=true npm test -- --watchAll=false
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: starter/frontend
+          push: false
+          tags: mp-frontend:latest
+          build-args: |
+            REACT_APP_MOVIE_API_URL=http://localhost:5000
