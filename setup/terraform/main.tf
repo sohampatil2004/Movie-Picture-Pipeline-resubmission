@@ -188,39 +188,9 @@ resource "aws_iam_role_policy_attachment" "eks_service" {
 ##################
 # Track latest release for the given k8s version
 data "aws_ssm_parameter" "eks_ami_release_version" {
-  name = "/aws/service/eks/optimized-ami/${aws_eks_cluster.main.version}/amazon-linux-2023/x86_64/standard/recommended/release_version"
+  name = "/aws/service/eks/optimized-ami/${aws_eks_cluster.main.version}/amazon-linux-2/recommended/release_version"
 }
-resource "aws_launch_template" "eks_node_fixed" {
-  name_prefix = "eks-node-fixed-"
 
-  instance_type = "t3.small"
-
-  user_data = base64encode(<<-EOT
-    MIME-Version: 1.0
-    Content-Type: multipart/mixed; boundary="BOUNDARY"
-
-    --BOUNDARY
-    Content-Type: application/node.eks.aws
-
-    ---
-    apiVersion: node.eks.aws/v1alpha1
-    kind: NodeConfig
-    spec:
-      featureGates:
-        InstanceIdNodeName: true
-
-    --BOUNDARY--
-  EOT
-  )
-
-  tag_specifications {
-    resource_type = "instance"
-
-    tags = {
-      Name = "eks-node-fixed"
-    }
-  }
-}
 resource "aws_eks_node_group" "main" {
   node_group_name = "udacity"
   cluster_name    = aws_eks_cluster.main.name
@@ -346,15 +316,9 @@ resource "aws_iam_user" "github_action_user" {
   name = "github-action-user"
 }
 
-resource "aws_iam_policy" "github_action_user_permission" {
-  name        = "github-action-user-permission"
-  description = "Permissions for GitHub Actions to deploy the Movie Picture Pipeline"
-  policy      = data.aws_iam_policy_document.github_policy.json
-}
-
-resource "aws_iam_user_policy_attachment" "github_action_user_permission" {
-  user       = aws_iam_user.github_action_user.name
-  policy_arn = aws_iam_policy.github_action_user_permission.arn
+resource "aws_iam_user_policy" "github_action_user_permission" {
+  user   = aws_iam_user.github_action_user.name
+  policy = data.aws_iam_policy_document.github_policy.json
 }
 
 data "aws_iam_policy_document" "github_policy" {
