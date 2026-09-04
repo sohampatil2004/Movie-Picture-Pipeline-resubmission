@@ -88,3 +88,17 @@ jobs:
       - name: Deploy frontend to EKS
         run: |
           kubectl apply -k k8s
+
+
+      - name: Verify Kubernetes deployment
+        run: |
+          kubectl rollout status deployment/frontend --timeout=180s || true
+          echo "----- Logging - kubectl get all -----"
+          kubectl get all
+          echo "----- Logging - kubectl describe deploy -----"
+          kubectl describe deploy frontend
+
+      - name: Verify Frontend ECR image
+        run: |
+          echo "----- Logging - Frontend ECR Image Details -----"
+          AWS_PAGER="" aws ecr describe-images --repository-name frontend --region us-east-1
